@@ -125,7 +125,9 @@ def plot_numeric_relationship(
 ):
     """
     Строит scatter plot зависимости между двумя числовыми переменными.
-    При наличии target_col точки автоматически окрашиваются по его значениям.
+    При наличии target_col:
+      - если уникальных значений ≤ 100 → 2D scatter с категориальной окраской (hue)
+      - если уникальных значений > 100 → 3D scatter (третья ось = target_col) + тепловая карта
     """
     # Проверка колонок
     required_cols = [x_col, y_col]
@@ -142,34 +144,71 @@ def plot_numeric_relationship(
     if not pd.api.types.is_numeric_dtype(df[y_col]):
         raise TypeError(f"{y_col} не является числовой переменной.")
 
-    # Построение графика
-    plt.figure(figsize=(9, 7))
-
     if target_col:
-        # Автоматическое определение уникальных значений и цветов
-        unique_vals = sorted(df[target_col].dropna().unique())
+        n_unique = df[target_col].nunique(dropna=True)
         
-        if len(unique_vals) > 6:  # слишком много категорий
-            raise ValueError(f"target_col '{target_col}' имеет слишком много уникальных значений ({len(unique_vals)}).")
+        if n_unique > 100:
+            # Числовая переменная - 3D scatter + тепловая карта
+            if not pd.api.types.is_numeric_dtype(df[target_col]):
+                raise TypeError(f"target_col '{target_col}' имеет >100 уникальных значений, "
+                                f"но не является числовой.")
+            
+            from mpl_toolkits.mplot3d import Axes3D
+            
+            fig = plt.figure(figsize=(11, 8))
+            ax = fig.add_subplot(111, projection='3d')
+            
+            scatter = ax.scatter(
+                df[x_col], 
+                df[y_col],
+                df[target_col],
+                c=df[target_col],
+                cmap='viridis',
+                alpha=0.7,
+                s=40
+            )
+            
+            cbar = fig.colorbar(scatter, ax=ax, shrink=0.6, pad=0.1)
+            cbar.set_label(target_col, fontsize=12)
+            
+            ax.set_xlabel(x_col, fontsize=11)
+            ax.set_ylabel(y_col, fontsize=11)
+            ax.set_zlabel(target_col, fontsize=11)
+            ax.set_title(f'Зависимость {y_col} от {x_col} (цвет и ось Z = {target_col})', fontsize=13)
+            
+            # Ограничения осей
+            if x_min is not None or x_max is not None:
+                ax.set_xlim(left=x_min, right=x_max)
+            if y_min is not None or y_max is not None:
+                ax.set_ylim(bottom=y_min, top=y_max)
+            
+            plt.tight_layout()
+            plt.show()
+            return
         
-        # Автоматическая палитра
-        palette = sns.color_palette("Set2", n_colors=len(unique_vals))
-        color_dict = dict(zip(unique_vals, palette))
-        
-        sns.scatterplot(
-            data=df, 
-            x=x_col, 
-            y=y_col,
-            hue=target_col, 
-            palette=color_dict,
-            alpha=0.7,
-            s=60
-        )
-        plt.legend(title=target_col, title_fontsize=12)
+        else:
+            # Категориальная переменная - обычный 2D hue
+            plt.figure(figsize=(9, 7))
+            
+            unique_vals = sorted(df[target_col].dropna().unique())
+            palette = sns.color_palette("Set2", n_colors=len(unique_vals))
+            color_dict = dict(zip(unique_vals, palette))
+            
+            sns.scatterplot(
+                data=df, 
+                x=x_col, 
+                y=y_col,
+                hue=target_col, 
+                palette=color_dict,
+                alpha=0.7,
+                s=60
+            )
+            plt.legend(title=target_col, title_fontsize=12)
     else:
+        plt.figure(figsize=(9, 7))
         sns.scatterplot(data=df, x=x_col, y=y_col, color='steelblue', alpha=0.7, s=60)
 
-    # Ограничения осей
+    # Ограничения осей (только для 2D)
     if x_min is not None or x_max is not None:
         plt.xlim(left=x_min, right=x_max)
     if y_min is not None or y_max is not None:
@@ -183,8 +222,8 @@ def plot_numeric_relationship(
     plt.show()
 
 
-def plot_box_by_category(df, cat_feature, num_feature, figsize=(10, 6), 
-                         showfliers=True, title=None):
+def plot_box_by_category(df, cat_feature, num_feature, categories=None, 
+                         figsize=(10, 6), showfliers=True, title=None):
     """
     Строит boxplot числового признака в разрезе категорий категориального признака.
     
@@ -192,11 +231,13 @@ def plot_box_by_category(df, cat_feature, num_feature, figsize=(10, 6),
         df          - DataFrame
         cat_feature - название категориального признака (например, 'income')
         num_feature - название числового признака (например, 'hours-per-week')
+        categories  - список категорий в нужном порядке (если None — берётся sorted unique)
         showfliers  - показывать ли выбросы
         title       - заголовок графика (если None — создаётся автоматически)
     """
     
-    categories = sorted(df[cat_feature].dropna().unique())
+    if categories is None:
+        categories = sorted(df[cat_feature].dropna().unique())
     
     data_groups = [df[df[cat_feature] == cat][num_feature].dropna() 
                    for cat in categories]
