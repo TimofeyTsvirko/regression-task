@@ -528,3 +528,49 @@ def compare_metrics_heatmap(df1, df2, df1_name='DF1', df2_name='DF2',
     plt.tight_layout()
 
     return fig, delta
+
+def plot_metrics_heatmap(df, title='Model Metrics Comparison', figsize=(12, 5),
+                         annot_fontsize=10):
+    """
+    Строит тепловую карту метрик с независимой нормализацией по каждому столбцу.
+    Для каждой метрики цвета считаются отдельно (лучшие/худшие значения выделяются).
+    """
+    # Копируем и нормализуем каждый столбец отдельно (min-max)
+    df_norm = df.copy().astype(float)
+    
+    for col in df_norm.columns:
+        col_min = df_norm[col].min()
+        col_max = df_norm[col].max()
+        if col_max - col_min > 1e-9:
+            df_norm[col] = (df_norm[col] - col_min) / (col_max - col_min)
+        else:
+            df_norm[col] = 0.5  # все значения одинаковые
+
+    # Для метрик, где меньше = лучше, инвертируем нормализацию
+    # (чтобы лучшие значения были одного цвета)
+    lower_is_better = ['MAE', 'MSE', 'RMSE', 'MAPE', 'MedAE']
+    for col in df_norm.columns:
+        if col in lower_is_better:
+            df_norm[col] = 1 - df_norm[col]
+
+    plt.figure(figsize=figsize)
+
+    sns.heatmap(
+        df_norm,
+        annot=df.round(3),          # показываем оригинальные значения
+        fmt='',
+        cmap='RdYlGn',              # красный = плохо, зелёный = хорошо
+        linewidths=0.5,
+        linecolor='white',
+        annot_kws={'size': annot_fontsize},
+        vmin=0,
+        vmax=1
+    )
+
+    plt.title(title, fontsize=14, pad=15)
+    plt.ylabel('Model', fontsize=12)
+    plt.xlabel('Metric', fontsize=12)
+    plt.yticks(rotation=0)
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.show()
