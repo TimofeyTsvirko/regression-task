@@ -14,37 +14,68 @@ def plot_phik(data, figsize=(12, 8)):
     plt.show()
 
 
-def plot_hist_numeric(data, feature, figsize=(8, 4), x_min=None, x_max=None):
+def plot_hist_numeric(data, feature, figsize=(10, 5), x_min=None, x_max=None, bins=None):
     filtered_data = data.copy()
     if x_min is not None:
         filtered_data = filtered_data[filtered_data[feature] >= x_min]
     if x_max is not None:
         filtered_data = filtered_data[filtered_data[feature] <= x_max]
 
+    if bins is None:
+        if filtered_data[feature].nunique() < 100:
+            bins = int(filtered_data[feature].max() - filtered_data[feature].min() + 1)
+        else:
+            bins = 'auto'
+
     plt.figure(figsize=figsize)
-    plt.grid()
-    sns.histplot(filtered_data[feature], kde=True)
+    plt.grid(True, alpha=0.3)
+    
+    sns.histplot(
+        filtered_data[feature], 
+        kde=True, 
+        bins=bins,
+        kde_kws={'bw_adjust': 0.8}
+    )
+    
     plt.title(f'Distribution of {feature}')
     plt.xlabel(feature)
     plt.ylabel('Frequency')
     plt.show()
 
 
-def plot_hist_categorical(data, feature, figsize=(4, 4)):
-    category_counts = data[feature].value_counts()
-    category_counts = category_counts.sort_values(ascending=False)
-    plt.figure(figsize=figsize)
-    plt.grid()
-    sns.barplot(x=category_counts.values,
-                y=category_counts.index,
-                hue=category_counts.index,  # Add this
-                palette="viridis",
-                orient='h',
-                legend=False)  # Add this
-    plt.title(f'Distribution of {feature}')
-    plt.ylabel(feature)
-    plt.xlabel('Frequency')
-    plt.show()
+def plot_hist_categorical(data, feature, ax=None, title=None):
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(4, 4))
+
+    category_counts = data[feature].value_counts().sort_values(ascending=False)
+    category_percent = category_counts / category_counts.sum() * 100
+
+    sns.barplot(
+        x=category_counts.values,
+        y=category_counts.index,
+        hue=category_counts.index,
+        palette="viridis",
+        legend=False,
+        order=category_counts.index,
+        ax=ax
+    )
+
+    offset = category_counts.max() * 0.01
+    for i, (count, pct) in enumerate(zip(category_counts.values, category_percent.values)):
+        ax.text(
+            count + offset,
+            i,
+            f"{pct:.1f}%",
+            va="center",
+            ha="left"
+        )
+
+    ax.set_title(title if title else f"Distribution of {feature}")
+    ax.set_xlabel("Frequency")
+    ax.set_ylabel(feature)
+    ax.grid(axis="x", alpha=0.3)
+    ax.set_xlim(0, category_counts.max() * 1.15)
+    return ax
 
 
 def plot_categorical_relationship(df, col1, col2):
@@ -87,7 +118,6 @@ def plot_numeric_relationship(
     x_col: str,
     y_col: str,
     target_col: str = None,
-    target_colors: dict = None,
     x_min: float = None,
     x_max: float = None,
     y_min: float = None,
@@ -95,21 +125,14 @@ def plot_numeric_relationship(
 ):
     """
     Строит scatter plot зависимости между двумя числовыми переменными.
-    При наличии бинарной таргетной переменной — точки окрашиваются по её значению.
-    Позволяет задать ограничения на оси X и Y.
-
-    :param df: pandas DataFrame
-    :param x_col: Название числовой переменной по оси X
-    :param y_col: Название числовой переменной по оси Y
-    :param target_col: (опционально) Название бинарной переменной для окраски точек
-    :param target_colors: (опционально) Словарь вида {значение_таргета: цвет}
-    :param x_min: (опционально) Минимальное значение оси X
-    :param x_max: (опционально) Максимальное значение оси X
-    :param y_min: (опционально) Минимальное значение оси Y
-    :param y_max: (опционально) Максимальное значение оси Y
+    При наличии target_col точки автоматически окрашиваются по его значениям.
     """
     # Проверка колонок
-    for col in [x_col, y_col, target_col] if target_col else [x_col, y_col]:
+    required_cols = [x_col, y_col]
+    if target_col:
+        required_cols.append(target_col)
+    
+    for col in required_cols:
         if col not in df.columns:
             raise ValueError(f"Колонка '{col}' отсутствует в DataFrame.")
 
@@ -119,30 +142,32 @@ def plot_numeric_relationship(
     if not pd.api.types.is_numeric_dtype(df[y_col]):
         raise TypeError(f"{y_col} не является числовой переменной.")
 
-    # Проверка бинарного таргета
-    if target_col is not None:
-        unique_vals = sorted(df[target_col].dropna().unique())
-        if len(unique_vals) != 2:
-            raise ValueError(
-                f"Таргет '{target_col}' должен быть бинарным (2 уникальных значения).")
-
-        # Палитра
-        if target_colors is None:
-            palette = {unique_vals[0]: 'blue', unique_vals[1]: 'red'}
-        else:
-            if not all(val in target_colors for val in unique_vals):
-                raise ValueError(
-                    f"target_colors должен содержать оба значения таргета: {unique_vals}")
-            palette = target_colors
-
     # Построение графика
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(9, 7))
+
     if target_col:
-        sns.scatterplot(data=df, x=x_col, y=y_col,
-                        hue=target_col, palette=palette)
-        plt.legend(title=target_col)
+        # Автоматическое определение уникальных значений и цветов
+        unique_vals = sorted(df[target_col].dropna().unique())
+        
+        if len(unique_vals) > 6:  # слишком много категорий
+            raise ValueError(f"target_col '{target_col}' имеет слишком много уникальных значений ({len(unique_vals)}).")
+        
+        # Автоматическая палитра
+        palette = sns.color_palette("Set2", n_colors=len(unique_vals))
+        color_dict = dict(zip(unique_vals, palette))
+        
+        sns.scatterplot(
+            data=df, 
+            x=x_col, 
+            y=y_col,
+            hue=target_col, 
+            palette=color_dict,
+            alpha=0.7,
+            s=60
+        )
+        plt.legend(title=target_col, title_fontsize=12)
     else:
-        sns.scatterplot(data=df, x=x_col, y=y_col, color='blue')
+        sns.scatterplot(data=df, x=x_col, y=y_col, color='steelblue', alpha=0.7, s=60)
 
     # Ограничения осей
     if x_min is not None or x_max is not None:
@@ -150,10 +175,52 @@ def plot_numeric_relationship(
     if y_min is not None or y_max is not None:
         plt.ylim(bottom=y_min, top=y_max)
 
-    plt.title(f'Зависимость {y_col} от {x_col}')
-    plt.xlabel(x_col)
-    plt.ylabel(y_col)
-    plt.grid(True)
+    plt.title(f'Зависимость {y_col} от {x_col}', fontsize=14)
+    plt.xlabel(x_col, fontsize=12)
+    plt.ylabel(y_col, fontsize=12)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_box_by_category(df, cat_feature, num_feature, figsize=(10, 6), 
+                         showfliers=True, title=None):
+    """
+    Строит boxplot числового признака в разрезе категорий категориального признака.
+    
+    Параметры:
+        df          - DataFrame
+        cat_feature - название категориального признака (например, 'income')
+        num_feature - название числового признака (например, 'hours-per-week')
+        showfliers  - показывать ли выбросы
+        title       - заголовок графика (если None — создаётся автоматически)
+    """
+    
+    categories = sorted(df[cat_feature].dropna().unique())
+    
+    data_groups = [df[df[cat_feature] == cat][num_feature].dropna() 
+                   for cat in categories]
+    
+    plt.figure(figsize=figsize)
+    
+    plt.boxplot(
+        data_groups,
+        tick_labels=categories,
+        showfliers=showfliers,
+        patch_artist=True
+    )
+    
+    # Автоматический заголовок
+    if title is None:
+        title = f"Distribution of {num_feature} by {cat_feature}"
+    
+    plt.title(title, fontsize=14)
+    plt.xlabel(cat_feature.capitalize(), fontsize=12)
+    plt.ylabel(num_feature.replace('-', ' ').title(), fontsize=12)
+    plt.grid(axis='y', alpha=0.3)
+    
+    plt.xticks(rotation=45, ha='right')
+    
     plt.tight_layout()
     plt.show()
 
@@ -287,8 +354,14 @@ def plot_feature_importance(model, feature_names, top_n=None, figsize=(10, 6),
 
     # Plot
     plt.figure(figsize=figsize)
-    sns.barplot(x='Importance', y='Feature',
-                data=feature_imp, palette='viridis')
+    sns.barplot(
+        x='Importance',
+        y='Feature',
+        data=feature_imp,
+        hue='Feature',
+        palette='viridis',
+        legend=False
+    )
     plt.title(f'Feature Importances ({model_type} model)')
     plt.xlabel(importance_label)
     plt.tight_layout()

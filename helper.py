@@ -6,12 +6,39 @@ from sklearn.base import clone
 import plots as p
 from imblearn.pipeline import Pipeline
 from sklearn.model_selection import cross_validate
+from sklearn.model_selection import train_test_split
 
 
 def divide_data(data, target_column):
     X = data.drop(columns=[target_column])
     y = data[target_column]
     return X, y
+
+
+def train_val_test_split(X, y, train_size=0.6, val_size=0.2, test_size=0.2, random_state=None, stratify=None):
+    if not (train_size + val_size + test_size) == 1.0:
+        raise ValueError("The sum of train, val, and test sizes must equal 1.0")
+        
+    X_tmp, X_test, y_tmp, y_test = train_test_split(
+        X, y, 
+        test_size=test_size, 
+        random_state=random_state, 
+        stratify=stratify
+    )
+    
+    remaining_size = train_size + val_size
+    relative_val_size = val_size / remaining_size
+    
+    stratify_tmp = y_tmp if stratify is not None else None
+    
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_tmp, y_tmp, 
+        test_size=relative_val_size, 
+        random_state=random_state, 
+        stratify=stratify_tmp
+    )
+    
+    return X_train, X_val, X_test, y_train, y_val, y_test
 
 
 def calculate_classification_metrics(y_test, y_pred, y_probs=None):
