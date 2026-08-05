@@ -266,94 +266,72 @@ def plot_box_by_category(df, cat_feature, num_feature, categories=None,
     plt.show()
 
 
-def plot_classification_results(metrics, model_name="Model"):
+def plot_regression_results(metrics, y_true, y_pred, model_name="Model"):
     """
-    Plot classification evaluation results
-
-    Parameters:
-    -----------
-    metrics : dict
-        Dictionary containing all metrics (output from calculate_classification_metrics)
-    model_name : str, optional
-        Name of the model for display purposes
+    Визуализация результатов регрессии:
+    1. Predicted vs Actual
+    2. Residuals plot
+    3. Distribution of residuals
     """
-    plt.figure(figsize=(15, 6))
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    residuals = y_true - y_pred
 
-    # Plot 1: Confusion Matrix
-    if 'Confusion Matrix' in metrics:
-        plt.subplot(1, 2, 1)
-        sns.heatmap(metrics['Confusion Matrix'], annot=True, fmt='d', cmap='Blues',
-                    xticklabels=['Predicted Negative', 'Predicted Positive'],
-                    yticklabels=['Actual Negative', 'Actual Positive'])
-        plt.title(f'{model_name} - Confusion Matrix', fontsize=14)
-        plt.xlabel('Predicted Label', fontsize=12)
-        plt.ylabel('True Label', fontsize=12)
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
-    # Plot 2: ROC Curve (if available)
-    if 'ROC Curve' in metrics:
-        roc_data = metrics['ROC Curve']
-        plt.subplot(1, 2, 2)
-        plt.plot(roc_data['fpr'], roc_data['tpr'], color='darkorange', lw=2,
-                 label=f'ROC curve (AUC = {metrics["ROC AUC"]:.2f})')
-        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-        plt.xlim([0.0, 1.0])
-        plt.ylim([0.0, 1.05])
-        plt.xlabel('False Positive Rate', fontsize=12)
-        plt.ylabel('True Positive Rate', fontsize=12)
-        plt.title('Receiver Operating Characteristic', fontsize=14)
-        plt.legend(loc="lower right")
+    # 1. Predicted vs Actual
+    axes[0].scatter(y_true, y_pred, alpha=0.6, edgecolor='k', s=40)
+    min_val = min(y_true.min(), y_pred.min())
+    max_val = max(y_true.max(), y_pred.max())
+    axes[0].plot([min_val, max_val], [min_val, max_val], 'r--', lw=2, label='Ideal')
+    axes[0].set_xlabel('Actual', fontsize=12)
+    axes[0].set_ylabel('Predicted', fontsize=12)
+    axes[0].set_title(f'{model_name}\nPredicted vs Actual', fontsize=13)
+    axes[0].legend()
+    axes[0].grid(True, alpha=0.3)
+
+    # 2. Residuals plot
+    axes[1].scatter(y_pred, residuals, alpha=0.6, edgecolor='k', s=40)
+    axes[1].axhline(0, color='r', linestyle='--', lw=2)
+    axes[1].set_xlabel('Predicted', fontsize=12)
+    axes[1].set_ylabel('Residuals', fontsize=12)
+    axes[1].set_title(f'{model_name}\nResiduals vs Predicted', fontsize=13)
+    axes[1].grid(True, alpha=0.3)
+
+    # 3. Distribution of residuals
+    sns.histplot(residuals, kde=True, ax=axes[2], color='steelblue')
+    axes[2].axvline(0, color='r', linestyle='--', lw=2)
+    axes[2].set_xlabel('Residuals', fontsize=12)
+    axes[2].set_title(f'{model_name}\nDistribution of Residuals', fontsize=13)
+    axes[2].grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.show()
 
 
-def print_classification_report(metrics, model_name="Model"):
+def print_regression_report(metrics, model_name="Model"):
     """
-    Print classification evaluation report
-
-    Parameters:
-    -----------
-    metrics : dict
-        Dictionary containing all metrics (output from calculate_classification_metrics)
-    model_name : str, optional
-        Name of the model for display purposes
+    Красивый вывод метрик регрессии
     """
-    # Create metrics table
-    metrics_df = pd.DataFrame({
-        'Metric': ['ROC AUC', 'F1 Score', 'Precision', 'Recall', 'Accuracy'],
-        'Value': [
-            f'{metrics["ROC AUC"]:.4f}' if metrics["ROC AUC"] is not None else 'N/A',
-            f'{metrics["F1 Score"]:.4f}',
-            f'{metrics["Precision"]:.4f}',
-            f'{metrics["Recall"]:.4f}',
-            f'{metrics["Accuracy"]:.4f}'
-        ]
-    })
-
-    # Classification report dataframe
-    class_report_df = pd.DataFrame(metrics['Classification Report'])
-
-    # Display results
-    print("\n" + "="*60)
-    print(f"{model_name.upper()} EVALUATION".center(60))
-    print("="*60)
-
-    print("\nMAIN METRICS:")
-    print(metrics_df.to_string(index=False))
-
-    print("\n\nCLASSIFICATION REPORT:")
-    print(class_report_df.to_string(index=False))
-
-    print("\n" + "="*60)
+    print("=" * 50)
+    print(f" Regression Report: {model_name}")
+    print("=" * 50)
+    print(f"MAE   : {metrics['MAE']:.4f}")
+    print(f"MSE   : {metrics['MSE']:.4f}")
+    print(f"RMSE  : {metrics['RMSE']:.4f}")
+    print(f"R²    : {metrics['R2']:.4f}")
+    print(f"MAPE  : {metrics['MAPE']:.2f}%")
+    print(f"MedAE : {metrics['MedAE']:.4f}")
+    print("=" * 50)
 
 
 def plot_feature_importance(model, feature_names, top_n=None, figsize=(10, 6),
                             model_type='auto'):
     """
-    Plot feature importance for various model types using Seaborn.
+    Plot feature importance for various regression model types using Seaborn.
 
     Parameters:
-    - model: Trained model (DecisionTree, RandomForest, LogisticRegression, etc.)
+    - model: Trained model (DecisionTreeRegressor, RandomForestRegressor, LinearRegression, Ridge, Lasso и т.д.)
     - feature_names: List of feature names
     - top_n: Show only top N important features (None for all)
     - figsize: Figure size
@@ -374,11 +352,13 @@ def plot_feature_importance(model, feature_names, top_n=None, figsize=(10, 6),
         importances = model.feature_importances_
         importance_label = "Feature Importance"
     elif model_type == 'linear':
-        # For linear models, use absolute coefficients as importance
-        if len(model.coef_.shape) > 1:  # multi-class
-            importances = np.mean(np.abs(model.coef_), axis=0)
-        else:  # binary classification
-            importances = np.abs(model.coef_[0])
+        # Для регрессии coef_ обычно одномерный
+        coef = model.coef_
+        if coef.ndim > 1:
+            # На всякий случай (если вдруг multi-output)
+            importances = np.mean(np.abs(coef), axis=0)
+        else:
+            importances = np.abs(coef)
         importance_label = "Absolute Coefficient"
     else:
         raise ValueError("model_type must be either 'tree' or 'linear'")
@@ -411,27 +391,27 @@ def plot_feature_importance(model, feature_names, top_n=None, figsize=(10, 6),
     return feature_imp
 
 
-def visualize_decision_tree(model, feature_names, class_names=None,
-                            figsize=(20, 10), max_depth=None):
+def visualize_decision_tree(model, feature_names, figsize=(20, 10), max_depth=None):
     """
-    Visualize the decision tree structure.
+    Visualize the decision tree structure (for DecisionTreeRegressor).
 
     Parameters:
-    - model: Trained DecisionTree model
+    - model: Trained DecisionTreeRegressor
     - feature_names: List of feature names
-    - class_names: List of class names (for classification)
     - figsize: Figure size
     - max_depth: Maximum depth to display (None for full tree)
     """
     plt.figure(figsize=figsize)
-    plot_tree(model,
-              feature_names=feature_names,
-              class_names=class_names,
-              filled=True,
-              rounded=True,
-              proportion=True,
-              max_depth=max_depth)
-    plt.title('Decision Tree Visualization')
+    plot_tree(
+        model,
+        feature_names=feature_names,
+        filled=True,
+        rounded=True,
+        proportion=True,
+        max_depth=max_depth,
+        impurity=True          # показывает MSE / variance
+    )
+    plt.title('Decision Tree Regressor Visualization')
     plt.show()
 
 
@@ -439,17 +419,19 @@ def plot_hyperparam_search_results(
     results,
     score_key='mean_test_score',
     title='Hyperparameter Tuning Results',
-    xtick_step=5
+    xtick_step=5,
+    higher_is_better=True
 ):
     """
-    Generic plot function for hyperparameter search results from GridSearchCV, RandomizedSearchCV,
-    BayesSearchCV, or any source with similar output.
+    Generic plot function for hyperparameter search results from GridSearchCV, 
+    RandomizedSearchCV, BayesSearchCV и т.д.
 
     Args:
         results (dict or pd.DataFrame): Search results. Must contain 'params' and score_key.
         score_key (str): Key for the score column (default 'mean_test_score').
         title (str): Plot title.
         xtick_step (int): Frequency of x-axis labels.
+        higher_is_better (bool): True для R², False для MAE/MSE/RMSE (когда используется neg_*)
     """
     # Normalize input
     if isinstance(results, dict):
@@ -473,7 +455,10 @@ def plot_hyperparam_search_results(
     df = df.reset_index().rename(columns={'index': 'Set #'})
 
     # Best score
-    best_idx = df[score_key].idxmax()
+    if higher_is_better:
+        best_idx = df[score_key].idxmax()
+    else:
+        best_idx = df[score_key].idxmin()
     best_score = df.loc[best_idx, score_key]
 
     # Plot
@@ -494,7 +479,7 @@ def plot_hyperparam_search_results(
              'ro', label=f'Best: {best_score:.4f}')
     plt.annotate(f'Best\n{best_score:.4f}',
                  xy=(df.loc[best_idx, 'Set #'], best_score),
-                 xytext=(df.loc[best_idx, 'Set #'], best_score + 0.02),
+                 xytext=(df.loc[best_idx, 'Set #'], best_score + (0.02 if higher_is_better else -0.02)),
                  arrowprops=dict(facecolor='red', shrink=0.05),
                  ha='center')
 
@@ -510,19 +495,8 @@ def compare_metrics_heatmap(df1, df2, df1_name='DF1', df2_name='DF2',
                             title='Comparison of ML Metrics'):
     """
     Compare two DataFrames of ML metrics and plot a heatmap of their differences.
-
-    Parameters:
-    - df1, df2: DataFrames containing metrics for ML algorithms (algorithms as index, metrics as columns)
-    - df1_name, df2_name: Names to display for each DataFrame in the comparison
-    - figsize: Size of the output figure
-    - annot_fontsize: Font size for annotations in heatmap
-    - title: Title for the plot
-
-    Returns:
-    - A matplotlib Figure object
-    - The delta DataFrame showing the differences
+    Работает одинаково и для классификации, и для регрессии.
     """
-
     # Calculate delta (difference) between DataFrames
     delta = df2 - df1
 

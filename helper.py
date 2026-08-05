@@ -1,6 +1,12 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import confusion_matrix, f1_score, roc_auc_score, precision_score, recall_score, roc_curve
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
+    median_absolute_error
+)
+import numpy as np
 import pandas as pd
 from sklearn.base import clone
 import plots as p
@@ -41,68 +47,16 @@ def train_val_test_split(X, y, train_size=0.6, val_size=0.2, test_size=0.2, rand
     return X_train, X_val, X_test, y_train, y_val, y_test
 
 
-def calculate_classification_metrics(y_test, y_pred, y_probs=None):
+def evaluate_regression(y_test, y_pred, model_name="Model", enable_plot=True):
     """
-    Calculate classification performance metrics
+    Evaluate regression performance with comprehensive metrics and visualizations
 
     Parameters:
     -----------
     y_test : array-like
-        True labels
+        True target values
     y_pred : array-like
-        Predicted labels
-    y_probs : array-like, optional
-        Predicted probabilities for positive class
-
-    Returns:
-    --------
-    dict: Dictionary containing all calculated metrics
-    """
-    metrics = {
-        'ROC AUC': roc_auc_score(y_test, y_probs) if y_probs is not None else None,
-        'F1 Score': f1_score(y_test, y_pred, average='macro'),
-        'Precision': precision_score(y_test, y_pred, average='macro'),
-        'Recall': recall_score(y_test, y_pred, average='macro'),
-        'Accuracy': (y_pred == y_test).mean(),
-        'Confusion Matrix': confusion_matrix(y_test, y_pred)
-    }
-
-    # Additional metrics for classification report
-    metrics['Classification Report'] = {
-        'Class': ['Positive', 'Negative'],
-        'Precision': [
-            precision_score(y_test, y_pred, pos_label=1),
-            precision_score(y_test, y_pred, pos_label=0)
-        ],
-        'Recall': [
-            recall_score(y_test, y_pred, pos_label=1),
-            recall_score(y_test, y_pred, pos_label=0)
-        ]
-    }
-
-    if y_probs is not None:
-        fpr, tpr, thresholds = roc_curve(y_test, y_probs)
-        metrics['ROC Curve'] = {
-            'fpr': fpr,
-            'tpr': tpr,
-            'thresholds': thresholds
-        }
-
-    return metrics
-
-
-def evaluate_classification(y_test, y_pred, y_probs=None, model_name="Model", enable_plot=True):
-    """
-    Evaluate classification performance with comprehensive metrics and visualizations
-
-    Parameters:
-    -----------
-    y_test : array-like
-        True labels
-    y_pred : array-like
-        Predicted labels
-    y_probs : array-like, optional
-        Predicted probabilities for positive class (required for ROC AUC)
+        Predicted target values
     model_name : str, optional
         Name of the model for display purposes
     enable_plot : bool, optional
@@ -113,17 +67,54 @@ def evaluate_classification(y_test, y_pred, y_probs=None, model_name="Model", en
     dict: Dictionary containing all calculated metrics
     """
     # Calculate all metrics
-    metrics = calculate_classification_metrics(y_test, y_pred, y_probs)
+    metrics = calculate_regression_metrics(y_test, y_pred)
 
     if enable_plot:
         # Generate plots
-        p.plot_classification_results(metrics, model_name)
+        p.plot_regression_results(metrics, y_test, y_pred, model_name)
 
         # Print detailed report
-        p.print_classification_report(metrics, model_name)
+        p.print_regression_report(metrics, model_name)
 
     # Return metrics dictionary (excluding plot data for cleaner output)
-    return {k: v for k, v in metrics.items() if k not in ['Confusion Matrix', 'ROC Curve', 'Classification Report']}
+    return {k: v for k, v in metrics.items() if k not in ['Residuals', 'Prediction Error']}
+
+
+def calculate_regression_metrics(y_test, y_pred):
+    """
+    Calculate regression performance metrics
+
+    Parameters:
+    -----------
+    y_test : array-like
+        True target values
+    y_pred : array-like
+        Predicted target values
+
+    Returns:
+    --------
+    dict: Dictionary containing all calculated metrics
+    """
+    y_test = np.asarray(y_test)
+    y_pred = np.asarray(y_pred)
+
+    residuals = y_test - y_pred
+
+    metrics = {
+        'MAE': mean_absolute_error(y_test, y_pred),
+        'MSE': mean_squared_error(y_test, y_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_pred)),
+        'R2': r2_score(y_test, y_pred),
+        'MAPE': np.mean(np.abs((y_test - y_pred) / np.clip(np.abs(y_test), 1e-8, None))) * 100,
+        'MedAE': median_absolute_error(y_test, y_pred),
+        'Residuals': residuals,
+        'Prediction Error': {
+            'y_true': y_test,
+            'y_pred': y_pred
+        }
+    }
+
+    return metrics
 
 
 def train_evaluate_model(model, model_name, X_train, y_train, X_test, y_test, seed=None):
@@ -139,13 +130,11 @@ def train_evaluate_model(model, model_name, X_train, y_train, X_test, y_test, se
 
     # Get predictions
     y_pred = model.predict(X_test)
-    y_probs = model.predict_proba(X_test)[:, 1]  # For ROC curve
 
     # Evaluate
-    metrics = evaluate_classification(
+    metrics = evaluate_regression(
         y_test=y_test,
         y_pred=y_pred,
-        y_probs=y_probs,
         model_name=model_name,
         enable_plot=False
     )
@@ -156,15 +145,13 @@ def train_evaluate_model(model, model_name, X_train, y_train, X_test, y_test, se
 def train_evaluate_model_cv(model, model_name, X, y,
                             preprocessor=None, cv=5, seed=None):
     """
-    Train and evaluate a model using cross-validation and optional preprocessing.
+    Train and evaluate a regression model using cross-validation and optional preprocessing.
 
     Args:
         model: The model to train and evaluate
         model_name: Name of the model for reporting
-        X_train: Training features
-        y_train: Training labels
-        X_test: Test features
-        y_test: Test labels
+        X: Features
+        y: Target
         preprocessor: Preprocessing pipeline (e.g., StandardScaler, OneHotEncoder)
         cv: Number of cross-validation folds
         seed: Random seed for reproducibility
@@ -194,16 +181,16 @@ def train_evaluate_model_cv(model, model_name, X, y,
         # No preprocessor, just use the model
         pipeline = model
 
-    # Scoring metrics for cross-validation (using macro averaging)
+    # Scoring metrics for regression cross-validation
     scoring = {
-        'accuracy': 'accuracy',
-        'precision': 'precision_macro',
-        'recall': 'recall_macro',
-        'f1': 'f1_macro',
-        'roc_auc': 'roc_auc'
+        'mae': 'neg_mean_absolute_error',
+        'mse': 'neg_mean_squared_error',
+        'rmse': 'neg_root_mean_squared_error',
+        'r2': 'r2',
+        'mape': 'neg_mean_absolute_percentage_error'
     }
 
-    # Perform cross-validation on training data
+    # Perform cross-validation
     cv_results = cross_validate(
         pipeline,
         X,
@@ -214,14 +201,15 @@ def train_evaluate_model_cv(model, model_name, X, y,
     )
 
     metrics = {
-        'ROC AUC': cv_results['test_roc_auc'].mean(),
-        'F1 Score': cv_results['test_f1'].mean(),
-        'Precision': cv_results['test_precision'].mean(),
-        'Recall': cv_results['test_recall'].mean(),
-        'Accuracy': cv_results['test_accuracy'].mean(),
+        'MAE': -cv_results['test_mae'].mean(),
+        'MSE': -cv_results['test_mse'].mean(),
+        'RMSE': -cv_results['test_rmse'].mean(),
+        'R2': cv_results['test_r2'].mean(),
+        'MAPE': -cv_results['test_mape'].mean() * 100,  # в процентах
     }
 
-    p.plot_classification_results(metrics, model_name)
+    # Можно добавить визуализацию, если нужно
+    # p.plot_regression_results(metrics, model_name)
 
     return metrics
 
@@ -231,9 +219,9 @@ def train_evaluate_models_cv(models: list, X, y, preprocessor=None, cv=5, seed=N
     all_metrics = {}
 
     for model_name, model in models:
-        # Работаем с копией модели, чтобы не изменять исходные модели, переданные в качестве аргументов
+        # Работаем с копией модели, чтобы не изменять исходные модели
         current_model = clone(model)
-        current_preprocessor = clone(preprocessor)
+        current_preprocessor = clone(preprocessor) if preprocessor is not None else None
 
         # Store metrics
         all_metrics[model_name] = train_evaluate_model_cv(
@@ -243,9 +231,9 @@ def train_evaluate_models_cv(models: list, X, y, preprocessor=None, cv=5, seed=N
     metrics_df = pd.DataFrame.from_dict(all_metrics, orient='index')
 
     # Plot heatmap
-    plt.figure(figsize=(8, 4))
-    sns.heatmap(metrics_df, cmap='RdBu_r', annot=True, fmt=".2f")
-    plt.title('Model Evaluation Metrics Comparison')
+    plt.figure(figsize=(10, 5))
+    sns.heatmap(metrics_df, cmap='RdBu_r', annot=True, fmt=".3f")
+    plt.title('Model Evaluation Metrics Comparison (Regression)')
     plt.tight_layout()
     plt.show()
 
@@ -254,22 +242,20 @@ def train_evaluate_models_cv(models: list, X, y, preprocessor=None, cv=5, seed=N
 
 def train_evaluate_models(models: list, X_train, y_train, X_test, y_test, seed=None):
     """
-    Train and evaluate multiple classification models, then display a heatmap of the metrics.
+    Train and evaluate multiple regression models, then display a heatmap of the metrics.
 
     Parameters:
     -----------
     models : list
-        List of tuples containing (model_name, model_instance) where model_instance is a scikit-learn compatible classifier
+        List of tuples containing (model_name, model_instance)
     X_train : array-like
         Training features
     y_train : array-like
-        Training labels
+        Training target
     X_test : array-like
         Test features
     y_test : array-like
-        Test labels
-    preprocessor : Pipeline or Transformer, optional
-        Preprocessing pipeline to apply to the data before training
+        Test target
     seed : int, optional
         Random seed for reproducibility
 
@@ -283,7 +269,7 @@ def train_evaluate_models(models: list, X_train, y_train, X_test, y_test, seed=N
     all_metrics = {}
 
     for model_name, model in models:
-        # Работаем с копией модели, чтобы не изменять исходные модели, переданные в качестве аргументов
+        # Работаем с копией модели
         current_model = clone(model)
 
         # Store metrics
@@ -294,9 +280,9 @@ def train_evaluate_models(models: list, X_train, y_train, X_test, y_test, seed=N
     metrics_df = pd.DataFrame.from_dict(all_metrics, orient='index')
 
     # Plot heatmap
-    plt.figure(figsize=(8, 4))
-    sns.heatmap(metrics_df, cmap='RdBu_r', annot=True, fmt=".2f")
-    plt.title('Model Evaluation Metrics Comparison')
+    plt.figure(figsize=(10, 5))
+    sns.heatmap(metrics_df, cmap='RdBu_r', annot=True, fmt=".3f")
+    plt.title('Model Evaluation Metrics Comparison (Regression)')
     plt.tight_layout()
     plt.show()
 
