@@ -11,7 +11,7 @@ import pandas as pd
 from sklearn.base import clone
 import plots as p
 from imblearn.pipeline import Pipeline
-from sklearn.model_selection import cross_validate
+from sklearn.model_selection import cross_validate, KFold
 from sklearn.model_selection import train_test_split
 
 
@@ -231,11 +231,7 @@ def train_evaluate_models_cv(models: list, X, y, preprocessor=None, cv=5, seed=N
     metrics_df = pd.DataFrame.from_dict(all_metrics, orient='index')
 
     # Plot heatmap
-    plt.figure(figsize=(10, 5))
-    sns.heatmap(metrics_df, cmap='RdBu_r', annot=True, fmt=".3f")
-    plt.title('Model Evaluation Metrics Comparison (Regression)')
-    plt.tight_layout()
-    plt.show()
+    p.plot_metrics_heatmap(metrics_df)
 
     return metrics_df
 
@@ -280,11 +276,7 @@ def train_evaluate_models(models: list, X_train, y_train, X_test, y_test, seed=N
     metrics_df = pd.DataFrame.from_dict(all_metrics, orient='index')
 
     # Plot heatmap
-    plt.figure(figsize=(10, 5))
-    sns.heatmap(metrics_df, cmap='RdBu_r', annot=True, fmt=".3f")
-    plt.title('Model Evaluation Metrics Comparison (Regression)')
-    plt.tight_layout()
-    plt.show()
+    p.plot_metrics_heatmap(metrics_df)
 
     return metrics_df
 
@@ -298,3 +290,54 @@ def winsorize_outliers(df, column_name, lower_bound=None, upper_bound=None):
         df.loc[df[column_name] > upper_bound, column_name] = upper_bound
 
     return df
+
+
+def train_evaluate_models_cv_log(models, X, y, preprocessor=None, cv=5, seed=None):
+    """
+    Обучает модели на log(y), метрики считает на исходной шкале цены.
+    """
+
+    y_log = np.log1p(y)
+    
+    if isinstance(cv, int):
+        kf = KFold(n_splits=cv, shuffle=True, random_state=seed)
+    else:
+        kf = cv
+
+    all_metrics = {}
+
+    for model_name, model in models:
+        maes, mses, rmses, r2s, mapes = [], [], [], [], []
+        
+        for train_idx, val_idx in kf.split(X):
+            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_train_log = y_log.iloc[train_idx]
+            y_val = y.iloc[val_idx]
+            
+            current_model = clone(model)
+            
+            if preprocessor is not None:
+                pipe = clone(preprocessor)
+                pipe.steps.append(('model', current_model))
+            else:
+                pipe = current_model
+                
+            pipe.fit(X_train, y_train_log)
+            y_pred = np.expm1(pipe.predict(X_val))
+            
+            maes.append(mean_absolute_error(y_val, y_pred))
+            mses.append(mean_squared_error(y_val, y_pred))
+            rmses.append(np.sqrt(mean_squared_error(y_val, y_pred)))
+            r2s.append(r2_score(y_val, y_pred))
+            mapes.append(np.mean(np.abs((y_val - y_pred) / np.clip(y_val, 1e-8, None))) * 100)
+        
+        all_metrics[model_name] = {
+            'MAE': np.mean(maes),
+            'MSE': np.mean(mses),
+            'RMSE': np.mean(rmses),
+            'R2': np.mean(r2s),
+            'MAPE': np.mean(mapes)
+        }
+
+    metrics_df = pd.DataFrame.from_dict(all_metrics, orient='index')
+    return metrics_df

@@ -491,41 +491,75 @@ def plot_hyperparam_search_results(
 
 
 def compare_metrics_heatmap(df1, df2, df1_name='DF1', df2_name='DF2',
-                            figsize=(8, 4), annot_fontsize=10,
+                            figsize=(10, 5), annot_fontsize=10,
                             title='Comparison of ML Metrics'):
     """
-    Compare two DataFrames of ML metrics and plot a heatmap of their differences.
-    Работает одинаково и для классификации, и для регрессии.
+    Сравнивает два DataFrame с метриками и рисует тепловую карту разниц.
+    
+    Учитывается направление метрик:
+    - R2          - чем больше, тем лучше
+    - остальные   - чем меньше, тем лучше
+    
+    Положительные и отрицательные изменения нормализуются отдельно,
+    чтобы и улучшения, и ухудшения были хорошо видны.
     """
-    # Calculate delta (difference) between DataFrames
     delta = df2 - df1
 
-    # Create a custom red-white-green colormap
-    colors = ["#ff2700", "#ffffff", "#00b975"]  # Red -> White -> Green
+    lower_is_better = ['MAE', 'MSE', 'RMSE', 'MAPE', 'MedAE']
+
+    # Матрица улучшения (положительное = улучшение)
+    improvement = delta.copy().astype(float)
+    for col in improvement.columns:
+        if col in lower_is_better:
+            improvement[col] = -delta[col]
+
+    delta_norm = improvement.copy()
+
+    for col in delta_norm.columns:
+        col_data = delta_norm[col].values
+        
+        pos_mask = col_data > 0
+        neg_mask = col_data < 0
+        
+        # Отдельная нормализация для положительных и отрицательных значений
+        if pos_mask.any():
+            pos_max = col_data[pos_mask].max()
+            if pos_max > 1e-9:
+                delta_norm.loc[pos_mask, col] = col_data[pos_mask] / pos_max
+        
+        if neg_mask.any():
+            neg_min = col_data[neg_mask].min()  # самое отрицательное
+            if abs(neg_min) > 1e-9:
+                delta_norm.loc[neg_mask, col] = col_data[neg_mask] / abs(neg_min)
+        
+        # Нули остаются нулями
+
+    colors = ["#ff2700", "#ffffff", "#00b975"]
     cmap = LinearSegmentedColormap.from_list("rwg", colors)
 
-    # Create figure
     fig, ax = plt.subplots(figsize=figsize)
 
-    # Plot heatmap
     sns.heatmap(
-        delta,
-        annot=True,
-        fmt=".3f",
+        delta_norm,
+        annot=delta.round(3),
+        fmt='',
         cmap=cmap,
         center=0,
-        linewidths=.5,
+        vmin=-1,
+        vmax=1,
+        linewidths=0.5,
+        linecolor='white',
         ax=ax,
         annot_kws={"size": annot_fontsize},
-        cbar_kws={'label': f'Difference ({df2_name} - {df1_name})'}
+        cbar_kws={'label': f'Improvement ({df2_name} vs {df1_name})'}
     )
 
-    # Customize plot
     ax.set_title(title, pad=20, fontsize=14)
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
     ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
 
     plt.tight_layout()
+    plt.show()
 
     return fig, delta
 
